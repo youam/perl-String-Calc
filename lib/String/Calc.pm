@@ -11,6 +11,8 @@ use Carp ();
 use overload
   '+'    => '_add',
   '*'    => '_mul',
+
+  'ne'   => '_ne',
   'bool' => sub { 1 },
   '""'   => 'as_string';
 
@@ -215,6 +217,29 @@ sub _mul {
     }
 
     ...
+}
+
+sub _ne {
+    my $i = shift;
+    my $j = shift;
+
+    if ( ref $j eq "" ) {
+        # $j is a scalar. compare stringified self with that
+        return $i->as_string ne $j;
+    }
+
+    if ( ref $i ne ref $j ) {
+        ### should compare with: ref $j
+        die "should compare with: ". (ref $j);
+        ...
+    }
+
+    # ignore format
+    # ignore precision
+    return 1 if $i->{unit} ne $j->{unit};
+    return 1 if $i->{value} ne $j->{value};
+    return 0;
+
 }
 
 sub _inval {
