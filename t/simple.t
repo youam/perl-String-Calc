@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 use Test::More;
 
-plan tests => 2;
+plan tests => 3;
 
 
 use String::Calc;
@@ -14,7 +14,11 @@ my $amount = String::Calc->new( '12.345.678,90 EUR' );
 is( ($amount + $amount)."",  '24.691.357,80 EUR', 'a+a => 2a' );
 is( ($amount * 10)."" ,     '123.456.789,00 EUR', 'a*10 => 10a' );
 
+$String::Calc::suffix->{'apples'} = {
+};
+
+my $apples = String::Calc->new( '5 apples' );
+
+is ( ($apples)."", '5 apples', '5 apples == 5 apples' );
+
 done_testing();
-
-
-

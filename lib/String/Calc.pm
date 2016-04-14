@@ -18,6 +18,7 @@ use overload
 
 use Scalar::Util qw(refaddr reftype);
 use warnings::register;
+
 =head1 NAME
 
 String::Calc - The great new String::Calc!
@@ -53,15 +54,9 @@ if you don't export anything, such as for a purely object-oriented module.
 
 =cut
 
-sub function1 {
-}
-
 =head2 function2
 
 =cut
-
-sub function2 {
-}
 
 =head1 AUTHOR
 
@@ -156,6 +151,10 @@ sub as_string {
     my $self = shift;
 
     ### as_string : $self
+    if ( $self->{format} eq "-x APPLES" ) {
+        my $str =  $self->{value} . ' ' . $self->{unit};
+        return $str;
+    }
     if ( $self->{format} eq "-xx.xxx.xxx,yy APPLES" ) {
         my $f = Number::Format->new(
             THOUSANDS_SEP => ".",
@@ -211,7 +210,7 @@ sub _mul {
             format => $i->{format},
             unit => $i->{unit},
             precision => $i->{precision},
-            value => $i->{value} * $j
+            value => $i->{value} * $j,
         };
         return bless ( $self, ref $i );
     }
@@ -252,6 +251,13 @@ sub _inval {
           . "')" );
 }
 
+our $suffix = {
+    'EUR' => {
+        alias => '€',
+        can_have_space => 1,
+    }
+};
+
 sub _new {
     my ( $that, @input ) = @_;
 
@@ -259,16 +265,45 @@ sub _new {
 
     if ( scalar @input == 1 ) {
         my $x = $input[0];
-        if ( ref $x and reftype($x) eq 'ARRAY' ) {
-            # called with array. will be splitted, or error out below
-            @input = @$x;
-        }
-        elsif ( UNIVERSAL::isa( $x, __PACKAGE__ ) ) {
+#        if ( ref $x and reftype($x) eq 'ARRAY' ) {
+#            # called with array. will be splitted, or error out below
+#            @input = @$x;
+#        }
+        if ( UNIVERSAL::isa( $x, __PACKAGE__ ) ) {
             # am already of class __PACKAGE__
             return ($x);
         }
         # hic sunt dragones
-        elsif ( $x =~ /^(?<negated>-?)(?<integers>[0-9]{1,3}(\.[0-9]{3})*),(?<decimals>[0-9]{2}) (?<unit>EUR)$/ ) {
+        my @suf_matches;
+        for my $suf ( keys %{$suffix} ) {
+            if ( $x =~ m/$suf$/ ) {
+                push @suf_matches, $suf;
+            }
+        }
+        if ( scalar @suf_matches > 1 ) {
+            # handle more than one possible suffix
+            ...
+        }
+        my $unit;
+        if ( scalar @suf_matches == 1 ) {
+            my $suf = $suf_matches[0];
+            # FIXME implement ->can_have_space
+            $x =~ s/( ?$suf)$//;
+            $unit = $1;
+            $unit =~ s/^ //; #XXX
+        }
+
+        if ( $x =~ /^(?<negated>-?)(?<integers>[0-9]+)$/ ){
+            my $value = $+{integers};
+            $value *= -1 if $+{negated} eq '-';
+            return ( bless {
+                value => $value,
+                precision => 0,
+                unit  => $unit,
+                format => '-x APPLES'
+                }, $class );
+        }
+        elsif ( $x =~ /^(?<negated>-?)(?<integers>[0-9]{1,3}(\.[0-9]{3})*),(?<decimals>[0-9]{2})$/ ) {
             # -xx.xxx.xxx,yy EUR
             my $value = $+{integers};
             $value =~ y/\.//d;
@@ -277,11 +312,14 @@ sub _new {
             return ( bless {
                 value => $value,
                 precision => 2,
-                unit  => $+{unit},
+                unit  => $unit,
                 format => '-xx.xxx.xxx,yy APPLES'
                 }, $class );
         }
         else {
+            if ( defined $unit ) {
+                ...
+            }
             return (undef);
             }
             #    elsif ($x =~ /^(\d\d\d\d)-(\d\d)-(\d\d)$/

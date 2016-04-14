@@ -13,6 +13,10 @@ meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
   version: '1.4'
 name: String-Calc
+provides:
+  String::Calc:
+    file: lib/String/Calc.pm
+    version: '0.01'
 resources:
   license: http://www.perlfoundation.org/artistic_license_2_0
 version: '0.01'
