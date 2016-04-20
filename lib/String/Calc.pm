@@ -151,11 +151,11 @@ sub as_string {
     my $self = shift;
 
     ### as_string : $self
-    if ( $self->{format} eq "-x APPLES" ) {
-        my $str =  $self->{value} . ' ' . $self->{unit};
+    if ( $self->{format} eq "-xAPPLES" ) {
+        my $str =  $self->{value} . $self->{unit};
         return $str;
     }
-    if ( $self->{format} eq "-xxxxx,yy APPLES" ) {
+    if ( $self->{format} eq "-xxxxx,yyAPPLES" ) {
         my $f = Number::Format->new(
             THOUSANDS_SEP => "",
             DECIMAL_POINT => ",",
@@ -166,10 +166,10 @@ sub as_string {
         );
 
         my $str = $f->format_number( $self->{value} );
-        $str .= ' ' . $self->{unit};
+        $str .= $self->{unit};
         return $str;
     }
-    if ( $self->{format} eq "-xx.xxx.xxx,yy APPLES" ) {
+    if ( $self->{format} eq "-xx.xxx.xxx,yyAPPLES" ) {
         my $f = Number::Format->new(
             THOUSANDS_SEP => ".",
             DECIMAL_POINT => ",",
@@ -180,7 +180,7 @@ sub as_string {
         );
 
         my $str = $f->format_number( $self->{value} );
-        $str .= ' ' . $self->{unit};
+        $str .= $self->{unit};
         return $str;
     }
     if ( $self->{format} eq "NULL" ) {
@@ -299,24 +299,21 @@ sub _new {
 
     if ( scalar @input == 1 ) {
         my $x = $input[0];
-#        if ( ref $x and reftype($x) eq 'ARRAY' ) {
-#            # called with array. will be splitted, or error out below
-#            @input = @$x;
-#        }
-        if ( UNIVERSAL::isa( $x, __PACKAGE__ ) ) {
-            # am already of class __PACKAGE__
-            return ($x);
-        }
-        # hic sunt dragones
-        if ( not defined $x ) {
-            return;
-        }
+
+        # got called with single argument of type __PACKAGE__
+        return $x if UNIVERSAL::isa( $x, __PACKAGE__ );
+
+        # __PACKAGE__->new( undef ) => undef
+        return if not defined $x;
+
+        # __PACKAGE__->new( "" )
         if ( $x eq "" ) {
             return ( bless {
                 value => $x, # either empty or undef
                 format => 'NULL',
                 }, $class );
         }
+
         my @suf_matches;
         for my $suf ( keys %{$suffix} ) {
             if ( $x =~ m/$suf$/ ) {
@@ -332,9 +329,14 @@ sub _new {
         if ( scalar @suf_matches == 1 ) {
             my $suf = $suf_matches[0];
             # FIXME implement ->can_have_space
-            $x =~ s/( ?$suf)$//;
-            $unit = $1;
-            $unit =~ s/^ //; #XXX
+            if ( not defined $suffix->{$suf}->{can_have_space} or $suffix->{$suf}->{can_have_space} ) {
+                $x =~ s/( ?$suf)//;
+                $unit = $1;
+            } else {
+                $x =~ s/($suf)$//;
+                $unit = $1;
+            }
+            die "unit undefined for $x" unless defined $unit;
         }
 
         if ( $x =~ /^(?<negated>-?)(?<integers>[0-9]+)$/ ){
@@ -344,7 +346,7 @@ sub _new {
                 value => $value,
                 precision => 0,
                 unit  => $unit,
-                format => '-x APPLES'
+                format => '-xAPPLES'
                 }, $class );
         }
         elsif ( $x =~ /^(?<negated>-?)(?<integers>[0-9]{1,3}(\.[0-9]{3})*),(?<decimals>[0-9]{2})$/ ) {
@@ -357,7 +359,7 @@ sub _new {
                 value => $value,
                 precision => 2,
                 unit  => $unit,
-                format => '-xx.xxx.xxx,yy APPLES'
+                format => '-xx.xxx.xxx,yyAPPLES'
                 }, $class );
         }
         elsif ( $x =~ /^(?<negated>-?)(?<integers>[0-9]+),(?<decimals>[0-9]{2})$/ ) {
@@ -369,7 +371,7 @@ sub _new {
                 value => $value,
                 precision => 2,
                 unit  => $unit,
-                format => '-xxxxx,yy APPLES'
+                format => '-xxxxx,yyAPPLES'
                 }, $class );
         }
         else {

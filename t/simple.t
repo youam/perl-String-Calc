@@ -4,12 +4,15 @@ use strict;
 use warnings FATAL => 'all';
 use Test::More;
 
-plan tests => 7;
+plan tests => 9;
 
 
 use String::Calc;
 
 my $amount = String::Calc->new( '12.345.678,90 EUR' );
+
+is( String::Calc->new( '123,45 EUR')."", '123,45 EUR', 'a X => a X' );
+is( String::Calc->new( '123,45EUR' )."", '123,45EUR', 'aX => aX' );
 
 is( ($amount + $amount)."",      '24.691.357,80 EUR', 'a+a => 2a' );
 is( ($amount * 10)."" ,         '123.456.789,00 EUR', 'a*10 => 10a' );
