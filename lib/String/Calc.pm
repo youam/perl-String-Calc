@@ -155,6 +155,20 @@ sub as_string {
         my $str =  $self->{value} . ' ' . $self->{unit};
         return $str;
     }
+    if ( $self->{format} eq "-xxxxx,yy APPLES" ) {
+        my $f = Number::Format->new(
+            THOUSANDS_SEP => "",
+            DECIMAL_POINT => ",",
+            MON_THOUSANDS_SEP => "",
+            MON_DECIMAL_POINT => ",",
+            DECIMAL_DIGITS => 2,
+            DECIMAL_FILL => 1,
+        );
+
+        my $str = $f->format_number( $self->{value} );
+        $str .= ' ' . $self->{unit};
+        return $str;
+    }
     if ( $self->{format} eq "-xx.xxx.xxx,yy APPLES" ) {
         my $f = Number::Format->new(
             THOUSANDS_SEP => ".",
@@ -169,6 +183,10 @@ sub as_string {
         $str .= ' ' . $self->{unit};
         return $str;
     }
+    if ( $self->{format} eq "NULL" ) {
+        return $self->{value}; # either empty or undef
+    }
+    die "don't know how to stringify format $self->{format}";
     ...
 }
 
@@ -177,8 +195,20 @@ sub _add {
     my $j = shift;
     my $swapped = shift; # ignored
 
+    return $i if not defined $j;
+    return $j if not defined $i;
+
+    if ( ref $j eq "" ) {
+        ### $j is a scalar, upgrade it to __PACKAGE__
+        $j = String::Calc->new( $j );
+        if ( not defined $j ) {
+            ...
+        }
+    }
     if ( ref $i eq ref $j ) {
         ### got another __PACKAGE __
+        return $j if $i->{format} eq "NULL";
+        return $i if $j->{format} eq "NULL";
         if ( $i->{format} eq $j->{format} and $i->{unit} eq $j->{unit} ) {
             my $self = {
                 format => $i->{format},
@@ -190,9 +220,13 @@ sub _add {
 
             return bless ( $self, ref $i );
         }
+        die "hu. got $i->{format}/$i->{unit} and $j->{format}/$j->{unit}";
         ...
     }
     ### something else
+    my $ri = ref $i;
+    my $rj = ref $j;
+    die "could not figure out what to do with an $ri and an $rj which are $swapped? swapped";
     ...
 }
 
@@ -274,6 +308,15 @@ sub _new {
             return ($x);
         }
         # hic sunt dragones
+        if ( not defined $x ) {
+            return;
+        }
+        if ( $x eq "" ) {
+            return ( bless {
+                value => $x, # either empty or undef
+                format => 'NULL',
+                }, $class );
+        }
         my @suf_matches;
         for my $suf ( keys %{$suffix} ) {
             if ( $x =~ m/$suf$/ ) {
@@ -282,6 +325,7 @@ sub _new {
         }
         if ( scalar @suf_matches > 1 ) {
             # handle more than one possible suffix
+            die "i've got ".(scalar @suf_matches)." suffix matches for: ",join(",",@suf_matches);
             ...
         }
         my $unit;
@@ -316,8 +360,21 @@ sub _new {
                 format => '-xx.xxx.xxx,yy APPLES'
                 }, $class );
         }
+        elsif ( $x =~ /^(?<negated>-?)(?<integers>[0-9]+),(?<decimals>[0-9]{2})$/ ) {
+            # -xxxxx,yy EUR
+            my $value = $+{integers};
+            $value += $+{decimals}/100;
+            $value *= -1 if $+{negated} eq '-';
+            return ( bless {
+                value => $value,
+                precision => 2,
+                unit  => $unit,
+                format => '-xxxxx,yy APPLES'
+                }, $class );
+        }
         else {
             if ( defined $unit ) {
+                die "unparsed value $x with unit $unit";
                 ...
             }
             return (undef);
