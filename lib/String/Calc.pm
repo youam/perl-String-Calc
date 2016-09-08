@@ -7,6 +7,7 @@ use warnings FATAL => 'all';
 use Number::Format;
 use YAML::Syck;
 use Math::Round;
+use utf8;
 
 #use Smart::Comments;
 
@@ -17,6 +18,7 @@ use overload
   '-'    => '_sub',
   '*'    => '_mul',
   '/'    => '_div',
+
   '=='   => '_ieq',
   '<=>'  => '_icmp',
   '>'    => '_igt',
@@ -26,10 +28,9 @@ use overload
 
   'eq'   => '_seq',
   'ne'   => '_sne',
-  'bool' => sub { 1 },
+
   '""'   => 'as_string';
 
-use Scalar::Util qw(refaddr reftype);
 use warnings::register;
 
 =head1 NAME
@@ -164,11 +165,12 @@ sub as_string {
     my $self = shift;
 
     ### as_string : $self
-    if ( $self->{format} eq "-xAPPLES" ) {
-        my $str =  $self->{value} . $self->{unit};
+    if ( $self->{presentation} eq "-xAPPLES" ) {
+        my $str =  $self->value;
+        $str .= $self->{unit};
         return $str;
     }
-    if ( $self->{format} eq "-xxxxx,yyAPPLES" ) {
+    if ( $self->{presentation} eq "-xxxxx,yyAPPLES" ) {
         my $f = Number::Format->new(
             THOUSANDS_SEP => "",
             DECIMAL_POINT => ",",
@@ -178,11 +180,11 @@ sub as_string {
             DECIMAL_FILL => 1,
         );
 
-        my $str = $f->format_number( $self->{value} );
+        my $str = $f->format_number( $self->value );
         $str .= $self->{unit};
         return $str;
     }
-    if ( $self->{format} eq "-xx.xxx.xxx,yyAPPLES" ) {
+    if ( $self->{presentation} eq "-xx.xxx.xxx,yyAPPLES" ) {
         my $f = Number::Format->new(
             THOUSANDS_SEP => ".",
             DECIMAL_POINT => ",",
@@ -192,28 +194,41 @@ sub as_string {
             DECIMAL_FILL => 1,
         );
 
-        my $str = $f->format_number( $self->{value} );
+        my $str = $f->format_number( $self->value );
         $str .= $self->{unit};
         return $str;
     }
-    if ( $self->{format} eq "-x.yAPPLES" ) {
-        return $self->{value}."".$self->{unit};
+    if ( $self->{presentation} eq "-x.yAPPLES" ) {
+        return $self->value."".$self->{unit};
     }
-    if ( $self->{format} eq "NULL" ) {
-        return $self->{value}; # either empty or undef
+    if ( $self->{presentation} eq "NULL" ) {
+        ...;
+        return $self->value; # either empty or undef
     }
-    die "don't know how to stringify format $self->{format}";
-    ...
+    if ( $self->{presentation} eq "0" ) {
+        return "0";
+    }
+    confess "don't know how to stringify format $self->{presentation}";
 }
 
-sub force_nearest {
-    # force rounded values. should happen automatically and warn otherwise
-    # XXX remove this function eventually
-    my $i = shift;
-    my $p = shift;
+sub _create {
+    my $class = shift;
+    confess "broken args" unless scalar @_ eq 4;
 
-    $i->{value} = nearest( $p, $i->{value} );
-    return $i;
+    my $self = {};
+
+    $self->{numerator} = shift;
+    confess "numberator must be integer!"
+        if defined $self->{numberator}
+           and int($self->{numberator}) ne $self->{numberator};
+    $self->{denominator} = shift;
+    confess "denominator must be integer!"
+        if defined $self->{denominator}
+           and int($self->{denominator}) ne $self->{denominator};
+    $self->{unit} = shift;
+    $self->{presentation} = shift;
+
+    return bless( $self, $class );
 }
 
 sub _clone {
@@ -225,37 +240,44 @@ sub _clone {
     return bless $n, ref $i;
 }
 
+sub value {
+    my $self = shift;
+    confess "oi! denominator is zero" if $self->{denominator} eq 0;
+    # XXX hum. that's NOT really beautiful
+    return $self->{numerator} / $self->{denominator};
+}
+
 my @_format_upgrade_table = (
     { l => "-xAPPLES", r => "-x.yAPPLES" },
     { l => "-xAPPLES", r => "-xx.xxx.xxx,yyAPPLES" },
     { l => "-x.yAPPLES", r => "-xx.xxx.xxx,yyAPPLES" },
+    { l => "-xxxxx,yyAPPLES", r => "-xx.xxx.xxx,yyAPPLES" },
 );
 sub _format_upgrade {
     my $i = shift;
     my $j = shift;
 
     for my $u ( @_format_upgrade_table ) {
-        return ( $i, $j ) if $i->{format} eq $j->{format};
+        return ( $i, $j ) if $i->{presentation} eq $j->{presentation};
 
-        if ( $i->{format} eq $u->{l} and $j->{format} eq $u->{r} ) {
-            ### upgrade format of $i
+        if ( $i->{presentation} eq $u->{l} and $j->{presentation} eq $u->{r} ) {
+            ### upgrade presentation of $i
             $i = _clone( $i );
-            $i->{format} = $j->{format};
-            $i->{precision} = $j->{precision} unless not defined $j->{precision}; # XXX
+            $i->{presentation} = $j->{presentation};
         }
-        if ( $i->{format} eq $u->{r} and $j->{format} eq $u->{l} ) {
-            ### upgrade format of $j
+        if ( $i->{presentation} eq $u->{r} and $j->{presentation} eq $u->{l} ) {
+            ### upgrade presentation of $j
             $j = _clone( $j );
-            $j->{format} = $i->{format};
-            $j->{precision} = $i->{precision} unless not defined $i->{precision};
+            $j->{presentation} = $i->{presentation};
         }
     }
     return ( $i, $j );
 }
+
 sub _add {
     my $i = shift;
     my $j = shift;
-    my $swapped = shift; # ignored
+    my $swapped = shift; # ignored for _add
 
     return $i if not defined $j;
     return $j if not defined $i;
@@ -267,47 +289,45 @@ sub _add {
             ...
         }
     }
-    if ( ref $i eq ref $j ) {
-        ### got another __PACKAGE __
-        return $j if $i->{format} eq "NULL";
-        return $i if $j->{format} eq "NULL";
-        die unless defined $i->{unit};
-        if ( $j->{format} eq "ZERO" ) {
-            return $i;
-        }
-        die "don't know what to do with: ". Dump $j unless defined $j->{unit};
-
-        ( $i, $j ) = _format_upgrade( $i, $j );
-        if ( $i->{format} eq $j->{format} and $i->{unit} eq " ".$j->{unit} ) {
-            $j = _clone( $j );
-            $j->{unit} = " " . $j->{unit};
-        }
-        if ( $i->{format} eq $j->{format} and " ".$i->{unit} eq $j->{unit} ) {
-            $i = _clone( $i );
-            $i->{unit} = " " . $i->{unit};
-        }
-        if ( $i->{format} eq $j->{format} and $i->{unit} eq $j->{unit} ) {
-            my $self = _clone( $i );
-            $self->{value} += $j->{value};
-            $self->{precision} = $j->{precision} if not defined $self->{precision} or defined $j->{precision} and $self->{precision} < $j->{precision};
-
-            return $self;
-        }
-        if ( (caller)[0] eq "Math::Round" ) { # and ref $j eq "" ) {
-            # Math::Round doesn't call us with correct units and stuff, just add it
-            my $self = _clone( $i );
-            $self->{value} += $j;
-            return $self;
-        }
-        confess ( 'ref is: "' . (ref $j) .'"' );
-        confess ( __PACKAGE__ . "->_add got $i->{format}/$i->{unit} and $j->{format}/$j->{unit}");
-        ...
+    if ( ref $i ne ref $j ) {
+        my $ri = ref $i;
+        my $rj = ref $j;
+        confess "could not figure out what to do with an $ri and an $rj which are " .( $swapped ? "" : "not" )." swapped";
     }
-    ### something else
-    my $ri = ref $i;
-    my $rj = ref $j;
-    die "could not figure out what to do with an $ri and an $rj which are $swapped? swapped";
-    ...
+
+    return $j if $i->{presentation} eq "";
+    return $i if $j->{presentation} eq "";
+    return $j if $i->value eq 0;
+    return $i if $j->value eq 0;
+    die unless defined $i->{unit}; #XXX do we need those?
+    die unless defined $j->{unit}; #XXX do we need those?
+    die "don't know what to do with: ". Dump $j unless defined $j->{unit};
+
+    ( $i, $j ) = _format_upgrade( $i, $j );
+    if ( $i->{presentation} eq $j->{presentation} and $i->{unit} eq " ".$j->{unit} ) {
+        $j = _clone( $j );
+        $j->{unit} = " " . $j->{unit};
+    }
+    if ( $i->{presentation} eq $j->{presentation} and " ".$i->{unit} eq $j->{unit} ) {
+        $i = _clone( $i );
+        $i->{unit} = " " . $i->{unit};
+    }
+    if ( $i->{presentation} eq $j->{presentation} and $i->{unit} eq $j->{unit} ) {
+        confess if $i->{denominator} != $j->{denominator};
+        my $n = _clone( $i );
+        $n->{numerator} += $j->{numerator};
+
+        return $n;
+    }
+    if ( (caller)[0] eq "Math::Round" ) { # and ref $j eq "" ) {
+        confess( "rounding of fixed-precision calculation?!" );
+        # Math::Round doesn't call us with correct units and stuff, just add it
+        my $self = _clone( $i );
+        # FIXME verify that numerator is still integer
+        $self->{numerator} += $j / $self->{denominator};
+        return $self;
+    }
+    confess ( __PACKAGE__ . "->_add got $i->{presentation}/$i->{unit} and $j->{presentation}/$j->{unit}");
 }
 
 sub _sub {
@@ -327,49 +347,64 @@ sub _sub {
     }
     if ( ref $i eq ref $j ) {
         ### got another __PACKAGE __
-        return $j if $i->{format} eq "NULL";
-        return $i if $j->{format} eq "NULL";
-        die unless defined $i->{unit};
-        if ( $j->{format} eq "ZERO" ) {
-            return $i;
+        if ( not $swapped ) {
+            return ($j * -1) if $i->{presentation} eq "NULL";
+            return ($i     ) if $j->{presentation} eq "NULL";
+            return ($j * -1) if $i->value eq 0;
+            return ($i     ) if $j->value eq 0;
+            return ($i     ) if $j->{presentation} eq "ZERO";
+            return ($j * -1) if $i->{presentation} eq "ZERO";
+        } else {
+            return ($j     ) if $i->{presentation} eq "NULL";
+            return ($i * -1) if $j->{presentation} eq "NULL";
+            return ($j     ) if $i->value eq 0;
+            return ($i * -1) if $j->value eq 0;
+            return ($i * -1) if $j->{presentation} eq "ZERO";
+            return ($j     ) if $i->{presentation} eq "ZERO";
         }
+        die unless defined $i->{unit};
         die "don't know what to do with: ". Dump $j unless defined $j->{unit};
 
         ( $i, $j ) = _format_upgrade( $i, $j );
-        if ( $i->{format} eq $j->{format} and $i->{unit} eq " ".$j->{unit} ) {
+        if ( $i->{presentation} eq $j->{presentation} and $i->{unit} eq " ".$j->{unit} ) {
             $j = _clone( $j );
             $j->{unit} = " " . $j->{unit};
         }
-        if ( $i->{format} eq $j->{format} and " ".$i->{unit} eq $j->{unit} ) {
+        if ( $i->{presentation} eq $j->{presentation} and " ".$i->{unit} eq $j->{unit} ) {
             $i = _clone( $i );
             $i->{unit} = " " . $i->{unit};
         }
 
-        if ( $i->{format} eq $j->{format} and $i->{unit} eq $j->{unit} ) {
+        if ( $i->{presentation} eq $j->{presentation} and $i->{unit} eq $j->{unit} ) {
+            confess if $i->{denominator} != $j->{denominator};
             my $n = _clone( $i );
             if ( not $swapped ) {
-                $n->{value} -= $j->{value};
+                $n->{numerator} -= $j->{numerator};
             } else {
-                $n->{value} = $j->{value} - $n->{value};
+                $n->{numerator} = $j->{numerator} - $n->{numerator};
             }
-            #$self->{precision} = $i->{precision};
             ## # i : $i
             ## # j : $j
-            #die "no prec for i" unless defined $i->{precision};
-            #die "no prec for j" unless defined $j->{precision};
-            #$self->{precision} = $j->{precision} if $self->{precision} < $j->{precision};
             # ## prepending blank to unit for j not really
 
             return $n;
         }
-        confess ( __PACKAGE__ . "->_sub got $i->{format}/$i->{unit} and $j->{format}/$j->{unit}");
-        ...
+        if ( (caller)[0] eq "Math::Round" ) { # and ref $j eq "" ) {
+            # Math::Round doesn't call us with correct units and stuff, just add it
+            my $self = _clone( $i );
+            if ( not $swapped ) {
+                $self->{value} -= $j;
+            } else {
+                $self->{value} = $j - $self->{value};
+            }
+            return $self;
+        }
+        confess ( __PACKAGE__ . "->_sub got $i->{presentation}/$i->{unit} and $j->{presentation}/$j->{unit}");
     }
     ### something else
     my $ri = ref $i;
     my $rj = ref $j;
     die "could not figure out what to do with an $ri and an $rj which are $swapped? swapped";
-    ...
 }
 
 sub _mul {
@@ -377,22 +412,41 @@ sub _mul {
     my $j = shift;
     my $swapped = shift; # ignored
 
-    ### got another __PACKAGE __
-    my $r = ref $j;
-    ### ref j is : $r
     if ( ref $j eq "" and $j =~ m/^-?[0-9]+(.[0-9]+)?$/ ) {
-        ### foo!
-        my $self = {
-            format => $i->{format},
-            unit => $i->{unit},
-            precision => $i->{precision},
-            value => $i->{value} * $j,
-        };
-        return bless ( $self, ref $i );
+        # $j is a plain perl scalar
+        confess "don't want to multiply with a fraction ($j)" if int($j) != $j;
+        my $n = _clone( $i );
+        $n->{numerator} *= $j;
+        return $n;
     }
 
-    confess ( __PACKAGE__."->_mul doesn't know how to (" . Dump $i .", " . Dump $j ." )" );
-    ...
+    confess ( __PACKAGE__."->_mul doesn't know how to (" . (Dump $i) .", " . (Dump $j) ." )" );
+}
+sub mul {
+    my $i = shift;
+    my $j = shift;
+    my $options = shift;
+
+    #### in String_Calc_mul
+    #### $i
+    #### $j
+    #### $options
+
+    my $r = ref $j;
+    if ( ref $j eq "" and $j =~ m/^-?[0-9]+(.[0-9]+)?$/ ) {
+        # $j is a plain perl scalar
+        die unless defined $options->{round} and $options->{round} eq "nearest";
+        my $self = _clone( $i );
+        #### $self
+        $self->{numerator} *= $j;
+        #### num : $self->{numerator}
+        $self->{numerator} = nearest( 1, $self->{numerator} );
+        #### num : $self->{numerator}
+        #### $self
+        return $self;
+    }
+
+    confess ( __PACKAGE__."->_mul doesn't know how to (" . (Dump $i) .", " . (Dump $j) ." )" );
 }
 
 sub _div {
@@ -400,33 +454,29 @@ sub _div {
     my $j = shift;
     my $swapped = shift;
 
+    my $class = ref $i;
+
     ### got another __PACKAGE __
     my $r = ref $j;
     ### ref j is : $r
+    die if $swapped;
     if ( ref $i eq ref $j ) {
         if ( $i->{unit} eq $j->{unit} ) {
-            my $self = {
-                format => "-x.yAPPLES",
-                unit => "",
-            };
-            if ( not $swapped ) {
-                $self->{value} = $i->{value} / $j->{value};
-            } else {
-                $self->{value} = $j->{value} / $i->{value};
-            }
-            return bless ( $self, ref $i );
+            # FIXME unit/unit -> no_unit
+            confess if $i->{denominator} != $j->{denominator};
+            my $val = $swapped
+                ? $j->{denominator} / $i->{denominator}
+                : $i->{denominator} / $j->{denominator}
+                ;
+            return $class->_create( $val, $i->{denominator}, $i->{unit}, $i->{presentation} );
         }
         ...;
     }
     if ( ref $j eq "" and $j =~ m/^-?[0-9]+(.[0-9]+)?$/ ) {
         ### foo!
-        my $self = {
-            format => $i->{format},
-            unit => $i->{unit},
-            precision => $i->{precision},
-            value => $i->{value} / $j,
-        };
-        return bless ( $self, ref $i );
+        my $n = _clone( $i );
+        $n->{numerator} /= $j;
+        return $n;
     }
 
     confess ( __PACKAGE__."->_div doesn't know how to (" . Dump $i .", " . Dump $j ." )" );
@@ -439,25 +489,29 @@ sub __compare {
     my $swapped = shift;
     my $comp = shift;
 
+    confess "can't compare undef" unless defined $i;
+    confess "can't compare undef" unless defined $j;
+
+
+
     my $ret;
     if( ref $j eq "" ) {
         # XXX should we always try to compare perlified values or should '0' be
         #     a special case?
         if ( not $swapped ) {
-            $ret = &{$comp}($i->{value}, $j);
+            $ret = &{$comp}($i->value, $j);
         } else {
-            $ret = &{$comp}($j, $i->{value});
+            $ret = &{$comp}($j, $i->value);
         }
     }
     if ( ref $i eq ref $j ) {
-    #use Smart::Comments;
-        ### $i
-        ### $j
-        confess "units differ, got '".$i->{unit}."' and '". $j->{unit}. "'" if $i->{unit} ne $j->{unit};
+        if ( $i->{presentation} ne "0" and $j->{presentation} ne "0" ) {
+            confess "units differ, got '".$i->{unit}."' and '". $j->{unit}. "'" if $i->{unit} ne $j->{unit};
+        }
         if ( not $swapped ) {
-            $ret = &{$comp}($i->{value}, $j);
+            $ret = &{$comp}($i->value, $j);
         } else {
-            $ret = &{$comp}($j, $i->{value});
+            $ret = &{$comp}($j, $i->value);
         }
     }
     die unless defined $ret;
@@ -487,6 +541,9 @@ sub _inval {
 }
 
 our $suffix = {
+    '€' => {
+        can_have_space => 1,
+    },
     'EUR' => {
         alias => '€',
         can_have_space => 1,
@@ -502,6 +559,11 @@ sub _new {
 
     my $class = ref($that) || $that;
 
+    if ( scalar @input == 2 ) {
+        # got called as __PACKAGE__->new( $value, $unit );
+        ...
+    }
+
     if ( scalar @input == 1 ) {
         my $x = $input[0];
 
@@ -513,20 +575,17 @@ sub _new {
 
         # __PACKAGE__->new( "" )
         if ( $x eq "" ) {
-            return ( bless {
-                value => $x, # either empty or undef
-                format => 'NULL',
-                }, $class );
+            # XXX Are we sure what should happen here?
+            # XXX former comment said "either empty or undef. do we want to
+            #      differentiate between those?
+            return $class->_create( $x, undef, "", "" );
         }
         if ( $x eq "0" ) {
-            return ( bless {
-                value => 0,
-                format => "ZERO",
-                }, $class );
+            return $class->_create( 0, 1, "0", "0" );
         }
 
         my $unit;
-        if ( $x =~ m/^[0-9]+(.[0-9]*)$/ or $x =~ m/^[0-9]+e-?[0-9]+$/ ) {
+        if ( $x =~ m/^[0-9]+(.[0-9]+)?$/ or $x =~ m/^[0-9]+e-?[0-9]+$/ ) {
             # this is a unit-less perl scalar thingy. add dummy unit;
             ### ADD PERLFLOAT TO : $x
             #$x .= "PERLFLOAT";
@@ -561,49 +620,36 @@ sub _new {
         }
 
         if ( $x =~ /^(?<negated>-?)(?<integers>[0-9]+)$/ ){
-            my $value = $+{integers};
-            $value *= -1 if $+{negated} eq '-';
-            return ( bless {
-                value => $value,
-                precision => 0,
-                unit  => $unit,
-                format => '-xAPPLES'
-                }, $class );
+            return $class->_create( $x, 1, $unit, '-xAPPLES' );
         }
         elsif ( $x =~ /^(?<negated>-?)(?<integers>[0-9]{1,3}(\.[0-9]{3})*),(?<decimals>[0-9]{2})$/ ) {
             # -xx.xxx.xxx,yy EUR
-            my $value = $+{integers};
-            $value =~ y/\.//d;
-            $value += $+{decimals}/100;
-            $value *= -1 if $+{negated} eq '-';
-            return ( bless {
-                value => $value,
-                precision => 2,
-                unit  => $unit,
-                format => '-xx.xxx.xxx,yyAPPLES'
-                }, $class );
+            my $val = $x;
+            $val =~ y/\.//d;
+            $val =~ y/,/./;
+            $val *= 100;
+            return $class->_create( $val, 100, $unit, '-xx.xxx.xxx,yyAPPLES' );
         }
         elsif ( $x =~ /^(?<negated>-?)(?<integers>[0-9]+),(?<decimals>[0-9]{2})$/ ) {
             # -xxxxx,yy EUR
-            my $value = $+{integers};
-            $value += $+{decimals}/100;
-            $value *= -1 if $+{negated} eq '-';
-            return ( bless {
-                value => $value,
-                precision => 2,
-                unit  => $unit,
-                format => '-xxxxx,yyAPPLES'
-                }, $class );
+            my $val = $x;
+            $val =~ y/,/./;
+            $val *= 100;
+            return $class->_create( $val, 100, $unit, '-xxxxx,yyAPPLES' );
         }
         elsif ( $x =~ /^(?<negated>-?)(?<integers>[0-9]+).(?<decimals>[0-9]+)$/ ) {
             # -x.y EUR
-            my $value = "$+{integers}.$+{decimals}";
-            $value *= -1 if $+{negated} eq '-';
-            return ( bless {
-                value => $value,
-                unit  => $unit,
-                format => '-x.yAPPLES'
-                }, $class );
+            # Ugh. that's an ugly heuristic
+            my $val = $+{integers};
+            my $dlen = length $+{decimals};
+            if ( $dlen > 5 ) {
+                die "does $x really have more than $dlen significant decimals?";
+            }
+            $val *= 10 ** $dlen;
+            $val += $+{decimals};
+            $val *= -1 if $+{negated} eq "-";
+
+            return $class->_create( $val, 10 ** $dlen, $unit, '-x.yAPPLES' );
         }
         else {
             if ( defined $unit ) {
@@ -644,7 +690,7 @@ sub new {
     if ( ( not defined $amount ) && scalar(@_) == 1 ) {
         Carp::croak( "'" . shift() . "' was not parsed" );
     }
-    return ($amount);
+    return $amount;
 }
 
 
