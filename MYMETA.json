@@ -4,7 +4,7 @@
       "Uli Martens <uli@youam.net>"
    ],
    "dynamic_config" : 0,
-   "generated_by" : "Module::Build version 0.421",
+   "generated_by" : "Module::Build version 0.4218",
    "license" : [
       "artistic_2"
    ],
@@ -37,5 +37,6 @@
          "http://www.perlfoundation.org/artistic_license_2_0"
       ]
    },
-   "version" : "0.01"
+   "version" : "0.01",
+   "x_serialization_backend" : "JSON::PP version 2.27400"
 }
