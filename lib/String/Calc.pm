@@ -8,6 +8,7 @@ use Number::Format;
 use YAML::Syck;
 use Math::Round;
 use utf8;
+use Scalar::Util;
 
 #use Smart::Comments;
 
@@ -218,13 +219,13 @@ sub _create {
     my $self = {};
 
     $self->{numerator} = shift;
-    confess "numberator must be integer!"
-        if defined $self->{numberator}
-           and int($self->{numberator}) ne $self->{numberator};
+    confess "numerator must be integer!"
+        unless not defined $self->{numerator}
+            or $self->{numerator} =~ /^[+-]?\d+\z/;
     $self->{denominator} = shift;
     confess "denominator must be integer!"
         if defined $self->{denominator}
-           and int($self->{denominator}) ne $self->{denominator};
+           and int($self->{denominator}) != $self->{denominator};
     $self->{unit} = shift;
     $self->{presentation} = shift;
 
@@ -283,7 +284,7 @@ sub _add {
     return $j if not defined $i;
 
     if ( ref $j eq "" ) {
-        ### $j is a scalar, upgrade it to __PACKAGE__
+        ### $j is a scalar, upgrade it to __PACKAGE__...
         $j = String::Calc->new( $j );
         if ( not defined $j ) {
             ...
@@ -314,8 +315,9 @@ sub _add {
     }
     if ( $i->{presentation} eq $j->{presentation} and $i->{unit} eq $j->{unit} ) {
         confess if $i->{denominator} != $j->{denominator};
+        use integer;
         my $n = _clone( $i );
-        $n->{numerator} += $j->{numerator};
+        $n->{numerator} = $i->{numerator} + $j->{numerator};
 
         return $n;
     }
@@ -341,6 +343,7 @@ sub _sub {
     if ( ref $j eq "" ) {
         ### $j is a scalar, upgrade it to __PACKAGE__
         $j = String::Calc->new( $j );
+        ### j is : $j
         if ( not defined $j ) {
             ...
         }
@@ -376,15 +379,18 @@ sub _sub {
         }
 
         if ( $i->{presentation} eq $j->{presentation} and $i->{unit} eq $j->{unit} ) {
-            confess if $i->{denominator} != $j->{denominator};
+        ### in sub foo ...
+            use integer;
+            confess "got different denominators: ". $i->{denominator} . " vs ".  $j->{denominator} . " - now what?" if $i->{denominator} != $j->{denominator};
             my $n = _clone( $i );
             if ( not $swapped ) {
-                $n->{numerator} -= $j->{numerator};
+                $n->{numerator} = $i->{numerator} - $j->{numerator};
             } else {
-                $n->{numerator} = $j->{numerator} - $n->{numerator};
+                $n->{numerator} = $j->{numerator} - $i->{numerator};
             }
-            ## # i : $i
-            ## # j : $j
+            ### i : $i
+            ### j : $j
+            ### n : $n
             # ## prepending blank to unit for j not really
 
             return $n;
@@ -433,7 +439,7 @@ sub mul {
     #### $options
 
     my $r = ref $j;
-    if ( ref $j eq "" and $j =~ m/^-?[0-9]+(.[0-9]+)?$/ ) {
+    if ( ref $j eq "" and Scalar::Util::looks_like_number( $j ) ) {
         # $j is a plain perl scalar
         die unless defined $options->{round} and $options->{round} eq "nearest";
         my $self = _clone( $i );
@@ -578,7 +584,7 @@ sub _new {
             # XXX Are we sure what should happen here?
             # XXX former comment said "either empty or undef. do we want to
             #      differentiate between those?
-            return $class->_create( $x, undef, "", "" );
+            return $class->_create( undef, 1, "", "" );
         }
         if ( $x eq "0" ) {
             return $class->_create( 0, 1, "0", "0" );
@@ -626,8 +632,7 @@ sub _new {
             # -xx.xxx.xxx,yy EUR
             my $val = $x;
             $val =~ y/\.//d;
-            $val =~ y/,/./;
-            $val *= 100;
+            $val =~ y/,//d;
             return $class->_create( $val, 100, $unit, '-xx.xxx.xxx,yyAPPLES' );
         }
         elsif ( $x =~ /^(?<negated>-?)(?<integers>[0-9]+),(?<decimals>[0-9]{2})$/ ) {

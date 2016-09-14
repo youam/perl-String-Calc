@@ -15,4 +15,8 @@ $amount = String::Calc->new( 0                   ); is( $amount . '', '0',      
 $amount = String::Calc->new( 1                   ); is( $amount . '', '1',                 'str(1) => 1'         ); is( $amount->value, 1,           'val(1) => 1' );
 $amount = String::Calc->new( 1.2                 ); is( $amount . '', '1.2',               'str(1.2) => 1.2'     ); is( $amount->value, 1.2,         'val(1.2) => 1.2' );
 
+for my $str ( ( '4.475,73 EUR' ) ) {
+	is( String::Calc->new( $str )->as_string, $str, "String::Calc->new('$str')->as_string eq '$str'" );
+}
+
 done_testing();
