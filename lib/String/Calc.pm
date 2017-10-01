@@ -503,20 +503,29 @@ sub __compare {
     if( ref $j eq "" ) {
         # XXX should we always try to compare perlified values or should '0' be
         #     a special case?
-        if ( not $swapped ) {
-            $ret = &{$comp}($i->value, $j);
-        } else {
-            $ret = &{$comp}($j, $i->value);
-        }
+        ### hu?
+        $j = String::Calc->new( $j );
+        return __compare( $i, $j, $swapped, $comp );
+        #if ( not $swapped ) {
+        #    $ret = &{$comp}($i->value, $j);
+        #} else {
+        #    $ret = &{$comp}($j, $i->value);
+        #}
     }
     if ( ref $i eq ref $j ) {
+        if ( $i->{numerator} == 0 ) {
+            $i = __PACKAGE__->new( '0' );
+        }
+        if ( $j->{numerator} == 0 ) {
+            $j = __PACKAGE__->new( '0' );
+        }
         if ( $i->{presentation} ne "0" and $j->{presentation} ne "0" ) {
             confess "Having problems comparing \n".(Dump $i)."and\n".(Dump $j)."because of differing units" if $i->{unit} ne $j->{unit};
         }
         if ( not $swapped ) {
-            $ret = &{$comp}($i->value, $j);
+            $ret = &{$comp}($i->value, $j->value);
         } else {
-            $ret = &{$comp}($j, $i->value);
+            $ret = &{$comp}($j->value, $i->value);
         }
     }
 
