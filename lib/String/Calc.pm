@@ -10,8 +10,6 @@ use Math::Round;
 use utf8;
 use Scalar::Util;
 
-#use Smart::Comments;
-
 use strict;
 use Carp;
 use overload
@@ -314,7 +312,7 @@ sub _add {
         $i->{unit} = " " . $i->{unit};
     }
     if ( $i->{presentation} eq $j->{presentation} and $i->{unit} eq $j->{unit} ) {
-        confess if $i->{denominator} != $j->{denominator};
+        confess "not yet implemented: mismatched denominators between\n".(Dump $i)."and\n".(Dump $j)."." if $i->{denominator} != $j->{denominator};
         use integer;
         my $n = _clone( $i );
         $n->{numerator} = $i->{numerator} + $j->{numerator};
@@ -418,6 +416,9 @@ sub _mul {
     my $j = shift;
     my $swapped = shift; # ignored
 
+    confess 'undefined $i' unless defined $i;
+    confess 'undefined $j' unless defined $j;
+
     if ( ref $j eq "" and $j =~ m/^-?[0-9]+(.[0-9]+)?$/ ) {
         # $j is a plain perl scalar
         confess "don't want to multiply with a fraction ($j)" if int($j) != $j;
@@ -498,8 +499,6 @@ sub __compare {
     confess "can't compare undef" unless defined $i;
     confess "can't compare undef" unless defined $j;
 
-
-
     my $ret;
     if( ref $j eq "" ) {
         # XXX should we always try to compare perlified values or should '0' be
@@ -512,7 +511,7 @@ sub __compare {
     }
     if ( ref $i eq ref $j ) {
         if ( $i->{presentation} ne "0" and $j->{presentation} ne "0" ) {
-            confess "units differ, got '".$i->{unit}."' and '". $j->{unit}. "'" if $i->{unit} ne $j->{unit};
+            confess "Having problems comparing \n".(Dump $i)."and\n".(Dump $j)."because of differing units" if $i->{unit} ne $j->{unit};
         }
         if ( not $swapped ) {
             $ret = &{$comp}($i->value, $j);
@@ -520,6 +519,7 @@ sub __compare {
             $ret = &{$comp}($j, $i->value);
         }
     }
+
     die unless defined $ret;
     return $ret;
 }
@@ -648,7 +648,7 @@ sub _new {
             my $val = $+{integers};
             my $dlen = length $+{decimals};
             if ( $dlen > 5 ) {
-                die "does $x really have more than $dlen significant decimals?";
+                confess "does $x really have more than $dlen significant decimals?";
             }
             $val *= 10 ** $dlen;
             $val += $+{decimals};
