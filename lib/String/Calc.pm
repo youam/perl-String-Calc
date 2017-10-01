@@ -565,6 +565,9 @@ sub _new {
 
     my $class = ref($that) || $that;
 
+    if ( scalar @input == 4 ) {
+        return $class->_create( @input );
+    }
     if ( scalar @input == 2 ) {
         # got called as __PACKAGE__->new( $value, $unit );
         ...
